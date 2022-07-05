@@ -181,8 +181,10 @@ two_sided_test = function(tobs, tvals, level=0.05, return_pval=FALSE) {
   
 }
 
+#' Transforms a vector of discrete values to clustering.
+#' e.g., (A, A, B, B, A, C, C, C) -> LIST [[ {1,2,5}, {3,4}, {6,7,8} ]]
+#' @param v Vector of discrete values.
 vector_to_clustering = function(v) {
-  # stopifnot(length(v)==n)
   u = unique(v)
   cl = list()
   for(u_class in u) {
@@ -191,12 +193,12 @@ vector_to_clustering = function(v) {
   return(cl)
 }
 
-
 basic_rrcontrol = list(type="perm",
-                       clustering=list(), 
+                       clustering=list(),
+                       g_invar=NULL,
                        test_type="two-sided",
                        level=0.05,
-                       num_r=2000, 
+                       num_r=5000, 
                        return_pval=FALSE) 
 #' Tests linear hypothesis
 #' @param y Response
@@ -211,29 +213,38 @@ rrtest = function(y, X,  a=rep(1, ncol(X)), a0=0, rr.control=basic_rrcontrol) {
   n = length(y) # data dimension
   if(!all(X[,1]==1)) stop("No intercept column.")
   stopifnot("num of datapoints conflict."=nrow(X)==n)
-  fit0 = lm.fit(X, y)
+  fit0 = .lm.fit(X, y)
   b_ols = coef(fit0)  # OLS estimator
   
   stopifnot(length(a)==ncol(X))
   # observed statistic
   Tn = sum(a*b_ols) - a0 # a'b^-a0
   
+  # TODO: Speed up?
   S = solve(t(X) %*% X)
   aSa = sum(t(a) %*% S %*% a)
+  aQ = as.vector(t(a) %*% S %*% t(X))
+  stopifnot(length(aQ)==n)
   
-  aQ = t(a) %*% S %*% t(X)
-  tn = function(e) { sum(aQ*e) }
-  
-  # restricted OLS
+  # restricted OLS -- TODO:Speed up?
   b_rls = b_ols - (Tn/aSa)* as.numeric(S %*% a)
   e_rls = as.numeric(y - X %*% b_rls) # restricted residuals
   
+  # tn() function
+  tn = function(e) { sum(aQ*e) }
+  
   # Create invariance function
-  g = create_invariance(n, rr.control$type, rr.control$clustering)
+  g = NA
+  if(is.null(rr.control$g_invar)) {
+    g = create_invariance(n, rr.control$type, rr.control$clustering)
+  } else {
+    # print("[INFO] Using g() invariance function.")
+    g = rr.control$g_invar
+  }
   
   # Residual randomization test. Additional draws.
   tvals = replicate(rr.control$num_r, {
-    tn(g(e_rls))
+    tn( g(e_rls) )
   })
   # tvals = c(Tn, tvals)
   
@@ -247,39 +258,53 @@ rrtest = function(y, X,  a=rep(1, ncol(X)), a0=0, rr.control=basic_rrcontrol) {
 #' Inverts a randomization test.
 #' @param rrtest_fn Function that tests single null. MUST return a p-value.
 #' 
-invert_rrtest = function(rrtest_fn, CI_initial=c(-50,50), level=0.05, verbose=TRUE) {
+invert_rrtest = function(rrtest_fn, CI_initial=c(-50,50), level=0.05, verbose=TRUE, tol=1e-4) {
   
-  print(paste(" > Inverting randomization test.."))
   CI = CI_initial
   lower_prev = CI[1]
   upper_prev = CI[2]
   mid_prev = NA
   KEEP=T
   
+  t0 = proc.time()[3]
+  print(paste("[INFO]: Inverting randomization test.."))
   while(KEEP) {
+    mid  = mean(CI) # (left+right)/2
     mid_prev = (lower_prev + upper_prev)/2
-    lower = CI[1]
-    p = rrtest_fn(lower) # p-value
+    p = rrtest_fn(CI[1]) # p-value
     if(p < level) {
-      # reject H0: lower
+      # We just rejected H0: lowerCI
       lower_prev = CI[1]
-      CI[1] = (lower_prev + mid_prev)/2 # increase lower
+      CI[1] = (CI[1] + mid)/2 # increase lower endpoint
     } else {
-      CI[1] = (lower_prev + lower)/2 # decrease lower
+      CI[1] = (lower_prev + CI[1])/2 # decrease lower
     }
-    
-    upper = CI[2]
-    p = rrtest_fn(upper)  # p-value
+  
+    p = rrtest_fn(CI[2])  # p-value
     if(p < level) {
-      # reject H0: upper
+      # We just rejected H0: upperCI
       upper_prev = CI[2]
-      CI[2] = (upper_prev + mid_prev)/2# decrease upper
+      CI[2] = (CI[2] + mid)/2 # decrease higher endpoint
     } else {
-      CI[2] = (upper_prev + upper)/2 # increase upper
+      CI[2] = (upper_prev + CI[2])/2 # increase higher endpoint
     }
     
-    if(abs(lower_prev - CI[1]) < 1e-5) { KEEP = FALSE }
-    print(paste("> Current ", round(100*(1-level), 1), "% CI = [", round(CI[1], 3), ",", round(CI[2], 3), "]"))
+    if(abs(lower_prev - CI[1]) < tol) { KEEP = FALSE }
+    t1 = proc.time()[3]
+    if(t1 - t0 > 5) {
+      print(paste("-[INFO]: Current ", round(100*(1-level), 1), "% CI = [", round(CI[1], 3), ",", round(CI[2], 3), "]"))
+      t0 = t1
+    }
   }
   return(CI)
+}
+
+#' CI for particular beta component.
+rrCI_param = function(y, X, param, rr.control, level=0.05) {
+  stopifnot(param > 0 & param <= ncol(X))
+  a_j = rep(0, ncol(X)); a_j[param] = 1
+  rtest = function(b) {
+    rrtest(y, X,a=a_j, a0=b, rr.control=rr.control)
+  }
+  invert_rrtest(rtest, level=level)
 }
