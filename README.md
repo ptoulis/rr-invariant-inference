@@ -15,7 +15,6 @@ Let's illustrate with an example. First, we sample the data.
 ```
 rm(list=ls())
 source("rri_functions.R") # loads main library
-
 set.seed(123)
 n = 200
 x = runif(n)
