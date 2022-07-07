@@ -98,7 +98,7 @@ A robust OLS test can be defined as follows:
 ```
 ols_test = function(d) {
   fit = lm(y ~ x, data=d)
-  V = vcovHC(fit, type = "HC2")
+  V = vcovHC(fit, type = "HC0")
   ci = coefci(fit, df = Inf, vcov = vcovHC(fit, type = "HC0"))
   ci[2,1] > 0 | ci[2,2] < 0  # tests β1=0
 }
