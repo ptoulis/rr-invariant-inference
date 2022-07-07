@@ -8,7 +8,7 @@ where y=outcomes, Χ=covariates, ε=errors, and β=parameters.
 In invariant inference, we only make structural invariance assumptions on the errors, but the data may be non-iid.
 This type of inference is called *invariant inference*. 
 
-Overall, invariant inference under residual randomization seems to be more robust in finite samples than robust OLS errors. Moreover, it is easier to apply in practice: all is required is to "plug-and-play" an appropriate invariance structure in the randomization procedure. See the paper for more details.
+Overall, invariant inference under residual randomization is more robust in finite samples than robust OLS errors. Moreover, it is easier to apply in practice: all is required is to "plug-and-play" an appropriate invariance structure in the randomization procedure. See the paper for more details.
 
 ## Example 1. Simple exchangeable errors.
 Let's illustrate with an example. First, we sample the data.
